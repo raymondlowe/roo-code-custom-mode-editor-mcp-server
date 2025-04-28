@@ -163,29 +163,32 @@ class RooModeEditorServer {
 	                       additionalProperties: false,
 	                   },
 	               },
-	               {
-	                   name: 'put_custom_mode_fields',
-	                   description: 'Updates one or more fields of a specific custom mode by its slug.',
-	                   inputSchema: {
-	                       type: 'object',
-	                       properties: {
-	                           slug: { type: 'string', description: 'The slug of the mode to update' },
-	                           fields: {
-	                               type: 'object',
-	                               properties: {
-	                                   name: { type: 'string', description: 'New display name' },
-	                                   roleDefinition: { type: 'string', description: 'New role definition' },
-	                                   customInstructions: { type: 'string', description: 'New custom instructions' },
-	                                   groups: { type: 'array', items: { type: 'string' }, description: 'New groups array' },
-	                               },
-	                               minProperties: 1,
-	                               additionalProperties: false,
-	                           },
-	                       },
-	                       required: ['slug', 'fields'],
-	                       additionalProperties: false,
-	                   },
-	               },
+	               // { // Removed put_custom_mode_fields
+	               //     name: 'put_custom_mode_fields',
+	               //     description: 'Updates one or more fields of a specific custom mode by its slug.',
+	               //     inputSchema: { /* ... */ },
+	               // },
+	                  { // Added update_custom_mode_field
+	                      name: 'update_custom_mode_field',
+	                      description: 'Updates a single field of a specific custom mode by its slug.',
+	                      inputSchema: {
+	                          type: 'object',
+	                          properties: {
+	                              slug: { type: 'string', description: 'The slug of the mode to update' },
+	                              fieldName: {
+	                                  type: 'string',
+	                                  description: 'The name of the field to update',
+	                                  enum: ['name', 'roleDefinition', 'customInstructions', 'groups'] // Allowed field names
+	                              },
+	                              fieldValue: {
+	                                  // Can be string or array of strings, validation done in handler
+	                                  description: 'The new value for the field (string, or array of strings for groups)'
+	                              }
+	                          },
+	                          required: ['slug', 'fieldName', 'fieldValue'],
+	                          additionalProperties: false,
+	                      },
+	                  },
 	           ]
 	        }));
 
@@ -231,47 +234,50 @@ class RooModeEditorServer {
 						return { content: [{ type: 'text', text: JSON.stringify(mode, null, 2) }] };
                     }
 
-					case 'put_custom_mode_fields': {
-                        if (!args || typeof args !== 'object' || typeof args.slug !== 'string' || typeof args.fields !== 'object' || args.fields === null) {
-                             throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string) and fields (object) are required.');
-                        }
-						const { slug, fields } = args as { slug: string; fields: Partial<RooMode> };
-						const modeIndex = modes.findIndex((m) => m.slug === slug);
-						if (modeIndex === -1) {
-						                      // Use InvalidRequest as NotFound is not available
-							throw new McpError(ErrorCode.InvalidRequest, `Mode with slug '${slug}' not found.`);
-						}
+					// case 'put_custom_mode_fields': { /* Removed */ }
 
-						                  // Validate fields to update
-                        const allowedFields: (keyof RooMode)[] = ['name', 'roleDefinition', 'customInstructions', 'groups'];
-                        const updates: Partial<RooMode> = {};
-                        let updated = false;
-                        for (const key in fields) {
-                            if (allowedFields.includes(key as keyof RooMode)) {
-                                // Basic type check (could be more robust)
-                                if (key === 'groups' && !Array.isArray(fields[key])) {
-                                     throw new McpError(ErrorCode.InvalidParams, `Invalid type for field 'groups'. Expected array, got ${typeof fields[key as keyof RooMode]}`);
-                                } else if (key !== 'groups' && typeof fields[key as keyof RooMode] !== 'string') { // Use type assertion here too
-                                     throw new McpError(ErrorCode.InvalidParams, `Invalid type for field '${key}'. Expected string, got ${typeof fields[key as keyof RooMode]}`);
-                                }
-                                (updates as any)[key] = fields[key as keyof RooMode]; // Use type assertion
-                                updated = true;
-                            } else if (key === 'slug') {
-                                throw new McpError(ErrorCode.InvalidRequest, `Updating the 'slug' field is not allowed.`);
-                            } else {
-                                 throw new McpError(ErrorCode.InvalidParams, `Invalid field provided: '${key}'. Allowed fields are: ${allowedFields.join(', ')}`);
-                            }
-                        }
+					               case 'update_custom_mode_field': {
+					                   // Validate arguments
+					                   if (!args || typeof args !== 'object' || typeof args.slug !== 'string' || typeof args.fieldName !== 'string' || args.fieldValue === undefined) {
+					                       throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string), fieldName (string), and fieldValue are required.');
+					                   }
+					                   const { slug, fieldName, fieldValue } = args as { slug: string; fieldName: string; fieldValue: any };
 
-                        if (!updated) {
-                             throw new McpError(ErrorCode.InvalidParams, 'No valid fields provided for update.');
-                        }
+					                   // Find the mode
+					                   const modeIndex = modes.findIndex((m) => m.slug === slug);
+					                   if (modeIndex === -1) {
+					                       throw new McpError(ErrorCode.InvalidRequest, `Mode with slug '${slug}' not found.`);
+					                   }
 
-						const updatedModes = [...modes];
-						updatedModes[modeIndex] = { ...updatedModes[modeIndex], ...updates };
-						await writeRooModes(updatedModes);
-						return { content: [{ type: 'text', text: `Mode '${slug}' updated successfully.` }] };
-                    }
+					                   // Validate field name and value type
+					                   const allowedFields: (keyof RooMode)[] = ['name', 'roleDefinition', 'customInstructions', 'groups'];
+					                   if (!allowedFields.includes(fieldName as keyof RooMode)) {
+					                       throw new McpError(ErrorCode.InvalidParams, `Invalid fieldName '${fieldName}'. Allowed fields are: ${allowedFields.join(', ')}`);
+					                   }
+					                   if (fieldName === 'slug') {
+					                        throw new McpError(ErrorCode.InvalidRequest, `Updating the 'slug' field is not allowed.`);
+					                   }
+
+					                   // Type validation for the value
+					                   if (fieldName === 'groups') {
+					                       if (!Array.isArray(fieldValue) || !fieldValue.every(item => typeof item === 'string')) {
+					                           throw new McpError(ErrorCode.InvalidParams, `Invalid fieldValue for 'groups'. Expected an array of strings.`);
+					                       }
+					                   } else { // name, roleDefinition, customInstructions
+					                       if (typeof fieldValue !== 'string') {
+					                           throw new McpError(ErrorCode.InvalidParams, `Invalid fieldValue for '${fieldName}'. Expected a string.`);
+					                       }
+					                   }
+
+					                   // Update the mode
+					                   const updatedModes = [...modes];
+					                   const modeToUpdate = { ...updatedModes[modeIndex] };
+					                   (modeToUpdate as any)[fieldName] = fieldValue; // Update the specific field
+					                   updatedModes[modeIndex] = modeToUpdate;
+
+					                   await writeRooModes(updatedModes);
+					                   return { content: [{ type: 'text', text: `Mode '${slug}', field '${fieldName}' updated successfully.` }] };
+					               }
 
 					default:
 						throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
