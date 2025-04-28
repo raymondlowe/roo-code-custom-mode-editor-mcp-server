@@ -8,13 +8,37 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const roomodesPath = './.roomodes';
+import { join } from 'path';
+import { homedir } from 'os';
+
+// Try to find .roomodes in current directory or home directory
+const findRoomodesPath = (): string => {
+  const paths = [
+    './.roomodes',
+    join(process.cwd(), '.roomodes'),
+    join(homedir(), '.roomodes')
+  ];
+  
+  for (const path of paths) {
+    try {
+      readFileSync(path, 'utf8');
+      return path;
+    } catch (error) {
+      // File not found, try next path
+    }
+  }
+  
+  return './.roomodes'; // Default to current directory
+};
+
+const roomodesPath = findRoomodesPath();
 let roomodesContent: any;
 
 try {
   roomodesContent = JSON.parse(readFileSync(roomodesPath, 'utf8'));
+  console.error(`Successfully loaded .roomodes from ${roomodesPath}`);
 } catch (error) {
-  console.error('Error reading .roomodes file:', error);
+  console.error(`Error reading .roomodes file from ${roomodesPath}:`, error);
   process.exit(1);
 }
 
@@ -167,8 +191,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
+  console.error("Starting roo-code-custom-mode-editor MCP server...");
+  
+  // Set up error handling for the process
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+  });
+  
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  });
+  
+  // Connect to the transport
   const transport = new StdioServerTransport();
+  console.error("Connecting to StdioServerTransport...");
   await server.connect(transport);
+  console.error("MCP server running and waiting for commands on stdin/stdout");
 }
 
 main().catch((error) => {
