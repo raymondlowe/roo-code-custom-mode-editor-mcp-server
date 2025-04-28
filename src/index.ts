@@ -1,222 +1,299 @@
 #!/usr/bin/env node
-
-/**
- * This is a template MCP server that implements a simple notes system.
- * It demonstrates core MCP concepts like resources and tools by allowing:
- * - Listing notes as resources
- * - Reading individual notes
- * - Creating new notes via a tool
- * - Summarizing all notes via a prompt
- */
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  CallToolRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+	CallToolRequestSchema,
+	ErrorCode,
+	ListToolsRequestSchema,
+	McpError,
+	// ToolDefinitionSchema, // Removed - define tools inline
+} from '@modelcontextprotocol/sdk/types.js';
+import { promises as fs } from 'fs';
+import path from 'path';
+import os from 'os';
 
-/**
- * Type alias for a note object.
- */
-type Note = { title: string, content: string };
+// --- Configuration ---
+// Assume .roomodes is in the user's home directory for simplicity
+// A more robust solution might check standard config locations
+const ROO_MODES_FILE_PATH = path.join(os.homedir(), '.roomodes');
 
-/**
- * Simple in-memory storage for notes.
- * In a real implementation, this would likely be backed by a database.
- */
-const notes: { [id: string]: Note } = {
-  "1": { title: "First Note", content: "This is note 1" },
-  "2": { title: "Second Note", content: "This is note 2" }
-};
-
-/**
- * Create an MCP server with capabilities for resources (to list/read notes),
- * tools (to create new notes), and prompts (to summarize notes).
- */
-const server = new Server(
-  {
-    name: "roo-code-custom-mode-editor-mcp-server",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      resources: {},
-      tools: {},
-      prompts: {},
-    },
-  }
-);
-
-/**
- * Handler for listing available notes as resources.
- * Each note is exposed as a resource with:
- * - A note:// URI scheme
- * - Plain text MIME type
- * - Human readable name and description (now including the note title)
- */
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  return {
-    resources: Object.entries(notes).map(([id, note]) => ({
-      uri: `note:///${id}`,
-      mimeType: "text/plain",
-      name: note.title,
-      description: `A text note: ${note.title}`
-    }))
-  };
-});
-
-/**
- * Handler for reading the contents of a specific note.
- * Takes a note:// URI and returns the note content as plain text.
- */
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const url = new URL(request.params.uri);
-  const id = url.pathname.replace(/^\//, '');
-  const note = notes[id];
-
-  if (!note) {
-    throw new Error(`Note ${id} not found`);
-  }
-
-  return {
-    contents: [{
-      uri: request.params.uri,
-      mimeType: "text/plain",
-      text: note.content
-    }]
-  };
-});
-
-/**
- * Handler that lists available tools.
- * Exposes a single "create_note" tool that lets clients create new notes.
- */
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "create_note",
-        description: "Create a new note",
-        inputSchema: {
-          type: "object",
-          properties: {
-            title: {
-              type: "string",
-              description: "Title of the note"
-            },
-            content: {
-              type: "string",
-              description: "Text content of the note"
-            }
-          },
-          required: ["title", "content"]
-        }
-      }
-    ]
-  };
-});
-
-/**
- * Handler for the create_note tool.
- * Creates a new note with the provided title and content, and returns success message.
- */
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  switch (request.params.name) {
-    case "create_note": {
-      const title = String(request.params.arguments?.title);
-      const content = String(request.params.arguments?.content);
-      if (!title || !content) {
-        throw new Error("Title and content are required");
-      }
-
-      const id = String(Object.keys(notes).length + 1);
-      notes[id] = { title, content };
-
-      return {
-        content: [{
-          type: "text",
-          text: `Created note ${id}: ${title}`
-        }]
-      };
-    }
-
-    default:
-      throw new Error("Unknown tool");
-  }
-});
-
-/**
- * Handler that lists available prompts.
- * Exposes a single "summarize_notes" prompt that summarizes all notes.
- */
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  return {
-    prompts: [
-      {
-        name: "summarize_notes",
-        description: "Summarize all notes",
-      }
-    ]
-  };
-});
-
-/**
- * Handler for the summarize_notes prompt.
- * Returns a prompt that requests summarization of all notes, with the notes' contents embedded as resources.
- */
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  if (request.params.name !== "summarize_notes") {
-    throw new Error("Unknown prompt");
-  }
-
-  const embeddedNotes = Object.entries(notes).map(([id, note]) => ({
-    type: "resource" as const,
-    resource: {
-      uri: `note:///${id}`,
-      mimeType: "text/plain",
-      text: note.content
-    }
-  }));
-
-  return {
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text: "Please summarize the following notes:"
-        }
-      },
-      ...embeddedNotes.map(note => ({
-        role: "user" as const,
-        content: note
-      })),
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text: "Provide a concise summary of all the notes above."
-        }
-      }
-    ]
-  };
-});
-
-/**
- * Start the server using stdio transport.
- * This allows the server to communicate via standard input/output streams.
- */
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+// --- Types ---
+interface RooMode {
+	slug: string;
+	name: string;
+	roleDefinition: string;
+	customInstructions: string;
+	groups: string[];
 }
 
-main().catch((error) => {
-  console.error("Server error:", error);
-  process.exit(1);
+// Type guard for RooMode array
+function isRooModeArray(data: any): data is RooMode[] {
+	return (
+		Array.isArray(data) &&
+		data.every(
+			(item) =>
+				typeof item === 'object' &&
+				item !== null &&
+				typeof item.slug === 'string' &&
+				typeof item.name === 'string' &&
+				typeof item.roleDefinition === 'string' &&
+				typeof item.customInstructions === 'string' &&
+				Array.isArray(item.groups) &&
+				item.groups.every((g: any) => typeof g === 'string')
+		)
+	);
+}
+
+// --- File Operations ---
+async function readRooModes(): Promise<RooMode[]> {
+	try {
+		const data = await fs.readFile(ROO_MODES_FILE_PATH, 'utf-8');
+		const parsedData = JSON.parse(data);
+		if (!isRooModeArray(parsedData)) {
+			console.error('Invalid format in .roomodes file. Returning empty array.');
+			// Optionally, could throw an McpError here if strict validation is desired
+			return [];
+		}
+		return parsedData;
+	} catch (error: any) {
+		if (error.code === 'ENOENT') {
+			// File doesn't exist, return empty array
+			return [];
+		}
+		console.error(`Error reading ${ROO_MODES_FILE_PATH}:`, error);
+		throw new McpError(
+			ErrorCode.InternalError,
+			`Failed to read modes file: ${error.message}`
+		);
+	}
+}
+
+async function writeRooModes(modes: RooMode[]): Promise<void> {
+	try {
+		const data = JSON.stringify(modes, null, 2); // Pretty print JSON
+		await fs.writeFile(ROO_MODES_FILE_PATH, data, 'utf-8');
+	} catch (error: any) {
+		console.error(`Error writing ${ROO_MODES_FILE_PATH}:`, error);
+		throw new McpError(
+			ErrorCode.InternalError,
+			`Failed to write modes file: ${error.message}`
+		);
+	}
+}
+
+// --- Server Implementation ---
+// Tool definitions moved inside ListTools handler below
+class RooModeEditorServer {
+	private server: Server;
+
+	constructor() {
+		this.server = new Server(
+			{
+				name: 'roo-code-custom-mode-editor', // Match README/package.json if needed
+				version: '0.1.0', // Update as needed
+			},
+			{
+				capabilities: {
+					resources: {}, // No resources defined for now
+					tools: {},
+				},
+			}
+		);
+
+		this.setupToolHandlers();
+
+		// Error handling
+		this.server.onerror = (error) => console.error('[MCP Error]', error);
+		process.on('SIGINT', async () => {
+			await this.server.close();
+			process.exit(0);
+		});
+        process.on('uncaughtException', (err) => {
+            console.error('Uncaught Exception:', err);
+            // Optionally close server gracefully here before exiting
+            process.exit(1);
+        });
+        process.on('unhandledRejection', (reason, promise) => {
+            console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+            // Optionally close server gracefully here before exiting
+            process.exit(1);
+        });
+	}
+
+	private setupToolHandlers() {
+		// List Tools Handler
+		this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+	           tools: [ // Define tools directly here
+	               {
+	                   name: 'list_custom_modes',
+	                   description: 'Lists all custom modes in the .roomodes file.',
+	                   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+	               },
+	               {
+	                   name: 'create_custom_mode',
+	                   description: 'Creates a new custom mode with the specified fields.',
+	                   inputSchema: {
+	                       type: 'object',
+	                       properties: {
+	                           slug: { type: 'string', description: 'Unique identifier for the mode' },
+	                           name: { type: 'string', description: 'Display name for the mode' },
+	                           roleDefinition: { type: 'string', description: 'System prompt/role definition' },
+	                           customInstructions: { type: 'string', description: 'User-specific instructions' },
+	                           groups: { type: 'array', items: { type: 'string' }, description: 'Groups the mode belongs to' },
+	                       },
+	                       required: ['slug', 'name', 'roleDefinition', 'customInstructions', 'groups'],
+	                       additionalProperties: false,
+	                   },
+	               },
+	               {
+	                   name: 'get_custom_mode_fields',
+	                   description: 'Gets the fields of a specific custom mode by its slug.',
+	                   inputSchema: {
+	                       type: 'object',
+	                       properties: {
+	                           slug: { type: 'string', description: 'The slug of the mode to retrieve' },
+	                       },
+	                       required: ['slug'],
+	                       additionalProperties: false,
+	                   },
+	               },
+	               {
+	                   name: 'put_custom_mode_fields',
+	                   description: 'Updates one or more fields of a specific custom mode by its slug.',
+	                   inputSchema: {
+	                       type: 'object',
+	                       properties: {
+	                           slug: { type: 'string', description: 'The slug of the mode to update' },
+	                           fields: {
+	                               type: 'object',
+	                               properties: {
+	                                   name: { type: 'string', description: 'New display name' },
+	                                   roleDefinition: { type: 'string', description: 'New role definition' },
+	                                   customInstructions: { type: 'string', description: 'New custom instructions' },
+	                                   groups: { type: 'array', items: { type: 'string' }, description: 'New groups array' },
+	                               },
+	                               minProperties: 1,
+	                               additionalProperties: false,
+	                           },
+	                       },
+	                       required: ['slug', 'fields'],
+	                       additionalProperties: false,
+	                   },
+	               },
+	           ]
+	        }));
+
+		// Call Tool Handler
+		this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+			const { name, arguments: args } = request.params;
+
+			try {
+                const modes = await readRooModes();
+
+				switch (name) {
+					case 'list_custom_modes':
+						return { content: [{ type: 'text', text: JSON.stringify(modes, null, 2) }] };
+
+					case 'create_custom_mode': {
+						// Basic validation (more specific checks could be added)
+						if (!args || typeof args !== 'object') throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments');
+                        const { slug, name: modeName, roleDefinition, customInstructions, groups: modeGroups } = args as Partial<RooMode>;
+
+                        if (!slug || !modeName || !roleDefinition || !customInstructions || !modeGroups || !Array.isArray(modeGroups)) {
+                            throw new McpError(ErrorCode.InvalidParams, 'Missing required fields for create_custom_mode');
+                        }
+                        if (modes.some(m => m.slug === slug)) {
+                            throw new McpError(ErrorCode.InvalidRequest, `Mode with slug '${slug}' already exists.`);
+                        }
+
+						const newMode: RooMode = { slug, name: modeName, roleDefinition, customInstructions, groups: modeGroups };
+						const updatedModes = [...modes, newMode];
+						await writeRooModes(updatedModes);
+						return { content: [{ type: 'text', text: `Mode '${slug}' created successfully.` }] };
+                    }
+
+					case 'get_custom_mode_fields': {
+                        if (!args || typeof args !== 'object' || typeof args.slug !== 'string') {
+                            throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string) is required.');
+                        }
+						const { slug } = args;
+						const mode = modes.find((m) => m.slug === slug);
+						if (!mode) {
+							// Use InvalidRequest as NotFound is not available
+							throw new McpError(ErrorCode.InvalidRequest, `Mode with slug '${slug}' not found.`);
+						}
+						return { content: [{ type: 'text', text: JSON.stringify(mode, null, 2) }] };
+                    }
+
+					case 'put_custom_mode_fields': {
+                        if (!args || typeof args !== 'object' || typeof args.slug !== 'string' || typeof args.fields !== 'object' || args.fields === null) {
+                             throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string) and fields (object) are required.');
+                        }
+						const { slug, fields } = args as { slug: string; fields: Partial<RooMode> };
+						const modeIndex = modes.findIndex((m) => m.slug === slug);
+						if (modeIndex === -1) {
+						                      // Use InvalidRequest as NotFound is not available
+							throw new McpError(ErrorCode.InvalidRequest, `Mode with slug '${slug}' not found.`);
+						}
+
+						                  // Validate fields to update
+                        const allowedFields: (keyof RooMode)[] = ['name', 'roleDefinition', 'customInstructions', 'groups'];
+                        const updates: Partial<RooMode> = {};
+                        let updated = false;
+                        for (const key in fields) {
+                            if (allowedFields.includes(key as keyof RooMode)) {
+                                // Basic type check (could be more robust)
+                                if (key === 'groups' && !Array.isArray(fields[key])) {
+                                     throw new McpError(ErrorCode.InvalidParams, `Invalid type for field 'groups'. Expected array, got ${typeof fields[key as keyof RooMode]}`);
+                                } else if (key !== 'groups' && typeof fields[key as keyof RooMode] !== 'string') { // Use type assertion here too
+                                     throw new McpError(ErrorCode.InvalidParams, `Invalid type for field '${key}'. Expected string, got ${typeof fields[key as keyof RooMode]}`);
+                                }
+                                (updates as any)[key] = fields[key as keyof RooMode]; // Use type assertion
+                                updated = true;
+                            } else if (key === 'slug') {
+                                throw new McpError(ErrorCode.InvalidRequest, `Updating the 'slug' field is not allowed.`);
+                            } else {
+                                 throw new McpError(ErrorCode.InvalidParams, `Invalid field provided: '${key}'. Allowed fields are: ${allowedFields.join(', ')}`);
+                            }
+                        }
+
+                        if (!updated) {
+                             throw new McpError(ErrorCode.InvalidParams, 'No valid fields provided for update.');
+                        }
+
+						const updatedModes = [...modes];
+						updatedModes[modeIndex] = { ...updatedModes[modeIndex], ...updates };
+						await writeRooModes(updatedModes);
+						return { content: [{ type: 'text', text: `Mode '${slug}' updated successfully.` }] };
+                    }
+
+					default:
+						throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+				}
+			} catch (error) {
+				if (error instanceof McpError) {
+					throw error; // Re-throw known MCP errors
+				}
+				// Log unexpected errors and return a generic internal error
+				console.error(`Unexpected error calling tool '${name}':`, error);
+				throw new McpError(
+					ErrorCode.InternalError,
+					`An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`
+				);
+			}
+		});
+	}
+
+	async run() {
+		const transport = new StdioServerTransport();
+		await this.server.connect(transport);
+		console.error('Roo Mode Editor MCP server running on stdio'); // Use console.error for logs to avoid interfering with stdout JSON communication
+	}
+}
+
+// --- Start Server ---
+const server = new RooModeEditorServer();
+server.run().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
 });
