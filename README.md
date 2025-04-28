@@ -1,29 +1,50 @@
-# roo-code-custom-mode-editor MCP Server
+# roo-code-custom-mode-editor-mcp-server
 
 An MCP server that knows how to edit the Roo Code custom modes file
 
-This is a TypeScript-based MCP server that implements a simple notes system. It demonstrates core MCP concepts by providing:
+Avoids having to overwrite the `.roomodes` file using file writes or edit the json with unreliable diffs.
 
-- Resources representing text notes with URIs and metadata
-- Tools for creating new notes
-- Prompts for generating summaries of notes
+The MCP server exposes tools to:
 
-## Features
+* List all custom modes
+* Create a new custom mode
+* Get the fields of a custom mode ( "slug","name",  "roleDefinition", "customInstructions", "groups")
+* Put and overwrite any one or more fields of a custom mode.
 
-### Resources
-- List and access notes via `note://` URIs
-- Each note has a title, content and metadata
-- Plain text mime type for simple content access
+Fields are:
 
-### Tools
-- `create_note` - Create new text notes
-  - Takes title and content as required parameters
-  - Stores note in server state
+- slug : short string
+- name : short string
+- roleDefinition : long string
+- customInstructions : long string
+- groups : array of short strings
 
-### Prompts
-- `summarize_notes` - Generate a summary of all stored notes
-  - Includes all note contents as embedded resources
-  - Returns structured prompt for LLM summarization
+## Usage
+
+This server is located at https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server and can be run using the following command:
+
+```bash
+npx https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server
+```
+
+## MCP Configuration
+
+To use with Roo Code, add the server config to the MCP settings file:
+
+```json
+{
+  "mcpServers": {
+    "roo-code-custom-mode-editor": {
+      "command": "node",
+      "args": [
+        "/path/to/roo-code-custom-mode-editor-mcp-server/build/index.js"
+      ],
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
+```
 
 ## Development
 
@@ -42,23 +63,6 @@ For development with auto-rebuild:
 npm run watch
 ```
 
-## Installation
-
-To use with Claude Desktop, add the server config:
-
-On MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "roo-code-custom-mode-editor": {
-      "command": "/path/to/roo-code-custom-mode-editor/build/index.js"
-    }
-  }
-}
-```
-
 ### Debugging
 
 Since MCP servers communicate over stdio, debugging can be challenging. We recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector), which is available as a package script:
@@ -68,3 +72,35 @@ npm run inspector
 ```
 
 The Inspector will provide a URL to access debugging tools in your browser.
+
+## Tools
+
+### list_custom_modes
+Lists all custom modes in the `.roomodes` file.
+
+### create_custom_mode
+Creates a new custom mode with the specified fields.
+
+Parameters:
+- slug: string
+- name: string
+- roleDefinition: string
+- customInstructions: string
+- groups: string[]
+
+### get_custom_mode_fields
+Gets the fields of a custom mode.
+
+Parameters:
+- slug: string
+
+### put_custom_mode_fields
+Updates one or more fields of a custom mode.
+
+Parameters:
+- slug: string
+- fields: object containing any of the following fields:
+  - name: string
+  - roleDefinition: string
+  - customInstructions: string
+  - groups: string[]
