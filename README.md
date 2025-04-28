@@ -9,7 +9,7 @@ The MCP server exposes tools to:
 * List all custom modes
 * Create a new custom mode
 * Get the fields of a custom mode ( "slug","name",  "roleDefinition", "customInstructions", "groups")
-* Put and overwrite any one or more fields of a custom mode.
+* Update a single field of a custom mode.
 
 Fields are:
 
@@ -19,33 +19,42 @@ Fields are:
 - customInstructions : long string
 - groups : array of short strings
 
-## Usage
+## Installation and Usage
 
-This server is located at https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server and can be run using the following command:
+1.  **Clone the repository:**
+    Choose a location on your computer and clone the repository:
+    ```bash
+    git clone https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server.git
+    cd roo-code-custom-mode-editor-mcp-server
+    ```
 
-```bash
-npx -y https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server
-```
+2.  **Install dependencies and build:**
+    ```bash
+    npm install
+    npm run build
+    ```
+    This compiles the TypeScript code into JavaScript in the `build` directory.
 
 ## MCP Configuration
 
-To use with Roo Code, add the server config to the MCP settings file:
+To use with Roo Code, add the following server configuration to your MCP settings file (e.g., `/home/rcl/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json`). Make sure to replace `/path/to/your/clone` with the actual absolute path where you cloned the repository.
 
 ```json
 {
   "mcpServers": {
     "roo-code-custom-mode-editor": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server"
+        "/path/to/your/clone/roo-code-custom-mode-editor-mcp-server/build/index.js"
       ],
       "disabled": false,
       "alwaysAllow": []
     }
+    // ... other servers
   }
 }
 ```
+After adding this configuration, restart Roo Code or reload the MCP servers for the changes to take effect.
 
 ## Development
 
@@ -95,13 +104,10 @@ Gets the fields of a custom mode.
 Parameters:
 - slug: string
 
-### put_custom_mode_fields
-Updates one or more fields of a custom mode.
+### update_custom_mode_field
+Updates a single field of a specific custom mode by its slug.
 
 Parameters:
-- slug: string
-- fields: object containing any of the following fields:
-  - name: string
-  - roleDefinition: string
-  - customInstructions: string
-  - groups: string[]
+- slug: string (The slug of the mode to update)
+- fieldName: string (The name of the field to update: "name", "roleDefinition", "customInstructions", or "groups")
+- fieldValue: string | string[] (The new value for the field. Must be an array of strings if fieldName is "groups", otherwise a string)
