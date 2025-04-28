@@ -7,15 +7,7 @@ import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError,
  } from '@modelcontextprotocol/sdk/types.js';
 import { promises as fs } from 'fs';
 import path from 'path';
-import os from 'os';
 console.error("Imports successful"); // Add log
-// --- Configuration ---
-// Assume .roomodes is in the user's home directory for simplicity
-// A more robust solution might check standard config locations
-const userHomeDir = os.homedir(); // Add log
-console.error(`User home directory: ${userHomeDir}`); // Add log
-const ROO_MODES_FILE_PATH = path.join(userHomeDir, '.roomodes');
-console.error(`.roomodes path set to: ${ROO_MODES_FILE_PATH}`); // Add log
 // Type guard for RooMode array
 function isRooModeArray(data) {
     return (Array.isArray(data) &&
@@ -29,12 +21,12 @@ function isRooModeArray(data) {
             item.groups.every((g) => typeof g === 'string')));
 }
 // --- File Operations ---
-async function readRooModes() {
+async function readRooModes(filePath) {
     try {
-        const data = await fs.readFile(ROO_MODES_FILE_PATH, 'utf-8');
+        const data = await fs.readFile(filePath, 'utf-8'); // Use filePath
         const parsedData = JSON.parse(data);
         if (!isRooModeArray(parsedData)) {
-            console.error('Invalid format in .roomodes file. Returning empty array.');
+            console.error(`Invalid format in ${filePath}. Returning empty array.`); // Use filePath
             // Optionally, could throw an McpError here if strict validation is desired
             return [];
         }
@@ -43,20 +35,23 @@ async function readRooModes() {
     catch (error) {
         if (error.code === 'ENOENT') {
             // File doesn't exist, return empty array
+            console.error(`File not found: ${filePath}. Returning empty array.`); // Use filePath
             return [];
         }
-        console.error(`Error reading ${ROO_MODES_FILE_PATH}:`, error);
-        throw new McpError(ErrorCode.InternalError, `Failed to read modes file: ${error.message}`);
+        console.error(`Error reading ${filePath}:`, error); // Use filePath
+        throw new McpError(ErrorCode.InternalError, `Failed to read modes file '${filePath}': ${error.message}` // Use filePath
+        );
     }
 }
-async function writeRooModes(modes) {
+async function writeRooModes(filePath, modes) {
     try {
         const data = JSON.stringify(modes, null, 2); // Pretty print JSON
-        await fs.writeFile(ROO_MODES_FILE_PATH, data, 'utf-8');
+        await fs.writeFile(filePath, data, 'utf-8'); // Use filePath
     }
     catch (error) {
-        console.error(`Error writing ${ROO_MODES_FILE_PATH}:`, error);
-        throw new McpError(ErrorCode.InternalError, `Failed to write modes file: ${error.message}`);
+        console.error(`Error writing ${filePath}:`, error); // Use filePath
+        throw new McpError(ErrorCode.InternalError, `Failed to write modes file '${filePath}': ${error.message}` // Use filePath
+        );
     }
 }
 // --- Server Implementation ---
@@ -97,8 +92,15 @@ class RooModeEditorServer {
             tools: [
                 {
                     name: 'list_custom_modes',
-                    description: 'Lists all custom modes in the .roomodes file.',
-                    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+                    description: 'Lists all custom modes in the specified .roomodes file.',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            rooModesFilePath: { type: 'string', description: 'Absolute path to the .roomodes file' }
+                        },
+                        required: ['rooModesFilePath'],
+                        additionalProperties: false
+                    },
                 },
                 {
                     name: 'create_custom_mode',
@@ -106,13 +108,14 @@ class RooModeEditorServer {
                     inputSchema: {
                         type: 'object',
                         properties: {
+                            rooModesFilePath: { type: 'string', description: 'Absolute path to the .roomodes file' },
                             slug: { type: 'string', description: 'Unique identifier for the mode' },
                             name: { type: 'string', description: 'Display name for the mode' },
                             roleDefinition: { type: 'string', description: 'System prompt/role definition' },
                             customInstructions: { type: 'string', description: 'User-specific instructions' },
                             groups: { type: 'array', items: { type: 'string' }, description: 'Groups the mode belongs to' },
                         },
-                        required: ['slug', 'name', 'roleDefinition', 'customInstructions', 'groups'],
+                        required: ['rooModesFilePath', 'slug', 'name', 'roleDefinition', 'customInstructions', 'groups'],
                         additionalProperties: false,
                     },
                 },
@@ -122,9 +125,10 @@ class RooModeEditorServer {
                     inputSchema: {
                         type: 'object',
                         properties: {
+                            rooModesFilePath: { type: 'string', description: 'Absolute path to the .roomodes file' },
                             slug: { type: 'string', description: 'The slug of the mode to retrieve' },
                         },
-                        required: ['slug'],
+                        required: ['rooModesFilePath', 'slug'],
                         additionalProperties: false,
                     },
                 },
@@ -139,6 +143,7 @@ class RooModeEditorServer {
                     inputSchema: {
                         type: 'object',
                         properties: {
+                            rooModesFilePath: { type: 'string', description: 'Absolute path to the .roomodes file' },
                             slug: { type: 'string', description: 'The slug of the mode to update' },
                             fieldName: {
                                 type: 'string',
@@ -150,7 +155,7 @@ class RooModeEditorServer {
                                 description: 'The new value for the field (string, or array of strings for groups)'
                             }
                         },
-                        required: ['slug', 'fieldName', 'fieldValue'],
+                        required: ['rooModesFilePath', 'slug', 'fieldName', 'fieldValue'],
                         additionalProperties: false,
                     },
                 },
@@ -159,8 +164,20 @@ class RooModeEditorServer {
         // Call Tool Handler
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const { name, arguments: args } = request.params;
+            // --- Argument Validation ---
+            if (!args || typeof args !== 'object' || typeof args.rooModesFilePath !== 'string' || !args.rooModesFilePath) {
+                throw new McpError(ErrorCode.InvalidParams, 'Missing or invalid required argument: rooModesFilePath (string)');
+            }
+            const rooModesFilePath = args.rooModesFilePath;
+            // Basic check if it looks like an absolute path (platform-dependent)
+            if (!path.isAbsolute(rooModesFilePath)) {
+                console.error(`Warning: rooModesFilePath "${rooModesFilePath}" does not appear to be an absolute path.`);
+                // Decide if this should be an error or just a warning
+                // throw new McpError(ErrorCode.InvalidParams, 'rooModesFilePath must be an absolute path.');
+            }
             try {
-                const modes = await readRooModes();
+                // Read modes using the provided path for every call
+                const modes = await readRooModes(rooModesFilePath);
                 switch (name) {
                     case 'list_custom_modes':
                         return { content: [{ type: 'text', text: JSON.stringify(modes, null, 2) }] };
@@ -177,11 +194,12 @@ class RooModeEditorServer {
                         }
                         const newMode = { slug, name: modeName, roleDefinition, customInstructions, groups: modeGroups };
                         const updatedModes = [...modes, newMode];
-                        await writeRooModes(updatedModes);
-                        return { content: [{ type: 'text', text: `Mode '${slug}' created successfully.` }] };
+                        await writeRooModes(rooModesFilePath, updatedModes); // Pass path
+                        return { content: [{ type: 'text', text: `Mode '${slug}' created successfully in ${rooModesFilePath}.` }] }; // Include path in response
                     }
                     case 'get_custom_mode_fields': {
-                        if (!args || typeof args !== 'object' || typeof args.slug !== 'string') {
+                        // rooModesFilePath already validated above
+                        if (typeof args.slug !== 'string') { // Only need to validate slug here
                             throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string) is required.');
                         }
                         const { slug } = args;
@@ -194,8 +212,9 @@ class RooModeEditorServer {
                     }
                     // case 'put_custom_mode_fields': { /* Removed */ }
                     case 'update_custom_mode_field': {
-                        // Validate arguments
-                        if (!args || typeof args !== 'object' || typeof args.slug !== 'string' || typeof args.fieldName !== 'string' || args.fieldValue === undefined) {
+                        // rooModesFilePath already validated above
+                        // Validate other arguments
+                        if (typeof args.slug !== 'string' || typeof args.fieldName !== 'string' || args.fieldValue === undefined) {
                             throw new McpError(ErrorCode.InvalidParams, 'Invalid arguments: slug (string), fieldName (string), and fieldValue are required.');
                         }
                         const { slug, fieldName, fieldValue } = args;
@@ -228,8 +247,8 @@ class RooModeEditorServer {
                         const modeToUpdate = { ...updatedModes[modeIndex] };
                         modeToUpdate[fieldName] = fieldValue; // Update the specific field
                         updatedModes[modeIndex] = modeToUpdate;
-                        await writeRooModes(updatedModes);
-                        return { content: [{ type: 'text', text: `Mode '${slug}', field '${fieldName}' updated successfully.` }] };
+                        await writeRooModes(rooModesFilePath, updatedModes); // Pass path
+                        return { content: [{ type: 'text', text: `Mode '${slug}', field '${fieldName}' updated successfully in ${rooModesFilePath}.` }] }; // Include path in response
                     }
                     default:
                         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);

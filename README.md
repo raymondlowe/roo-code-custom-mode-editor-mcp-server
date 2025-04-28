@@ -86,12 +86,16 @@ The Inspector will provide a URL to access debugging tools in your browser.
 ## Tools
 
 ### list_custom_modes
-Lists all custom modes in the `.roomodes` file.
+Lists all custom modes in the specified `.roomodes` file.
+
+Parameters:
+- rooModesFilePath: string (Absolute path to the `.roomodes` file)
 
 ### create_custom_mode
 Creates a new custom mode with the specified fields.
 
 Parameters:
+- rooModesFilePath: string (Absolute path to the `.roomodes` file)
 - slug: string
 - name: string
 - roleDefinition: string
@@ -102,12 +106,14 @@ Parameters:
 Gets the fields of a custom mode.
 
 Parameters:
+- rooModesFilePath: string (Absolute path to the `.roomodes` file)
 - slug: string
 
 ### update_custom_mode_field
 Updates a single field of a specific custom mode by its slug.
 
 Parameters:
+- rooModesFilePath: string (Absolute path to the `.roomodes` file)
 - slug: string (The slug of the mode to update)
 - fieldName: string (The name of the field to update: "name", "roleDefinition", "customInstructions", or "groups")
 - fieldValue: string | string[] (The new value for the field. Must be an array of strings if fieldName is "groups", otherwise a string)
