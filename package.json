@@ -1,8 +1,12 @@
 {
-  "name": "roo-code-custom-mode-editor",
+  "name": "@raymondlowe/roo-code-custom-mode-editor-mcp-server",
   "version": "0.1.0",
   "description": "An MCP server that knows how to edit the Roo Code custom modes file",
   "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server.git"
+  },
   "type": "module",
   "main": "./build/index.js",
   "bin": {
