@@ -37,7 +37,7 @@ Fields are:
 
 ## MCP Configuration
 
-To use with Roo Code, add the following server configuration to your MCP settings file (e.g., `/home/rcl/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json`). Make sure to replace `/path/to/your/clone` with the actual absolute path where you cloned the repository.
+To use with Roo Code, add the following server configuration to your MCP settings file (e.g., `.roo/mcp.json`). Make sure to replace `/path/to/your/clone` with the actual absolute path where you cloned the repository.
 
 ```json
 {
