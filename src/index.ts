@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+console.error("MCP Server Script Started"); // Add log
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -12,10 +13,15 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 
+console.error("Imports successful"); // Add log
+
 // --- Configuration ---
 // Assume .roomodes is in the user's home directory for simplicity
 // A more robust solution might check standard config locations
-const ROO_MODES_FILE_PATH = path.join(os.homedir(), '.roomodes');
+const userHomeDir = os.homedir(); // Add log
+console.error(`User home directory: ${userHomeDir}`); // Add log
+const ROO_MODES_FILE_PATH = path.join(userHomeDir, '.roomodes');
+console.error(`.roomodes path set to: ${ROO_MODES_FILE_PATH}`); // Add log
 
 // --- Types ---
 interface RooMode {
@@ -292,7 +298,9 @@ class RooModeEditorServer {
 }
 
 // --- Start Server ---
+console.error("Creating RooModeEditorServer instance..."); // Add log
 const server = new RooModeEditorServer();
+console.error("Calling server.run()..."); // Add log
 server.run().catch((err) => {
     console.error("Failed to start server:", err);
     process.exit(1);
