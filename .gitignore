@@ -1,4 +1,4 @@
 node_modules/
-build/
+# build/  <- Removed, we need to commit build artifacts for npx
 *.log
 .env*
