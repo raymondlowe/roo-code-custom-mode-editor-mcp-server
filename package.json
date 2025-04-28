@@ -7,6 +7,21 @@
     "type": "git",
     "url": "git+https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "roo",
+    "custom-modes",
+    "editor"
+  ],
+  "author": "Raymond Lowe",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server/issues"
+  },
+  "homepage": "https://github.com/raymondlowe/roo-code-custom-mode-editor-mcp-server#readme",
   "type": "module",
   "main": "./build/index.js",
   "bin": {
